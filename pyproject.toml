@@ -7,3 +7,7 @@ dependencies = []
 
 [project.urls]
 Repository = "https://github.com/IZmake/iz_chat"
+
+[tool.comfy]
+PublisherId = "izmake" 
+DisplayName = "IZ chat"
