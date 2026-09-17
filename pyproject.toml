@@ -1,7 +1,7 @@
 [project]
 name = "iz_chat"
 description = "LLM chat node for ComfyUI — chat with Vision-Language models directly in the node UI, no workflow execution needed for generation."
-version = "1.0.0"
+version = "1.0.0.0"
 license = {file = "LICENSE"}
 dependencies = []
 
