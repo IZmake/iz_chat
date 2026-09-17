@@ -37,7 +37,7 @@ https://github.com/user-attachments/assets/3ec06dde-c748-43f9-ae30-255ce5863923
 
 https://github.com/user-attachments/assets/eb25720c-34e8-4247-94ef-f91e118a6780
 
-### Сan accept more than one image
+### Can accept more than one image
 https://github.com/user-attachments/assets/f141fc79-c3df-49ed-9d7a-afefbe343677
 
 ### What else can you do? 
