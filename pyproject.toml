@@ -11,3 +11,4 @@ Repository = "https://github.com/IZmake/iz_chat"
 [tool.comfy]
 PublisherId = "izmake" 
 DisplayName = "IZ chat"
+Icon = "https://raw.githubusercontent.com/IZmake/iz_chat/refs/heads/main/logo.png"
