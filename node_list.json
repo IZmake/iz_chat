@@ -1,0 +1,4 @@
+{
+    "iz_chat": "Chat with LLM model (with image support) via ComfyUI CLIP",
+    "iz_chat_cfg": "Generation settings for iz_chat"
+}
