@@ -1,10 +1,8 @@
-"""
-API for LLM chat.
-- Supports batch of multiple images
-- Uses standard clip.tokenize mechanism like TextGenerate
-- Parameters from request override cached values (no restart needed)
-- _is_chat_generating flag allows workflow to wait for chat generation
-"""
+# API for LLM chat.
+# - Supports batch of multiple images
+# - Uses standard clip.tokenize mechanism like TextGenerate
+# - Parameters from request override cached values (no restart needed)
+# - _is_chat_generating flag allows workflow to wait for chat generation
 
 import json
 import random
@@ -15,14 +13,161 @@ import asyncio
 import base64
 import io
 import threading
+import torch
+from tqdm import tqdm
+
 from server import PromptServer
 from aiohttp import web
 
+import comfy.utils
+import comfy.model_management
+import comfy.model_prefetch
+import comfy.text_encoders.llama
+
+# ═══════════════════════════════════════════════════════════════════
+# ─── MONKEY-PATCH: Fix MRoPE + Stale CUDA Graphs for Qwen-VL ───
+# ═══════════════════════════════════════════════════════════════════
+def patched_generate(self, embeds=None, do_sample=True, max_length=256, temperature=1.0,
+                     top_k=50, top_p=0.9, min_p=0.0, repetition_penalty=1.0, seed=42,
+                     stop_tokens=None, initial_tokens=[], execution_dtype=None,
+                     min_tokens=0, presence_penalty=0.0, initial_input_ids=None,
+                     position_ids=None, deepstack_embeds=None, visual_pos_masks=None,
+                     embeds_info=None):
+
+    from comfy.text_encoders.llama import penalty_active
+    device = embeds.device
+
+    if stop_tokens is None:
+        stop_tokens = self.model.config.stop_tokens
+
+    if execution_dtype is None:
+        if comfy.model_management.should_use_bf16(device):
+            execution_dtype = torch.bfloat16
+        else:
+            execution_dtype = torch.float32
+    embeds = embeds.to(execution_dtype)
+
+    if embeds.ndim == 2:
+        embeds = embeds.unsqueeze(0)
+
+    max_cache_len = embeds.shape[1] + max_length
+    past_key_values = self.init_kv_cache(embeds.shape[0], max_cache_len, device, execution_dtype)
+
+    generator = torch.Generator(device=device).manual_seed(seed) if do_sample else None
+
+    generated_token_ids = []
+    pbar = comfy.utils.ProgressBar(max_length)
+
+    is_mrope = (
+        getattr(self.model.config, 'rope_dims', None) is not None or
+        getattr(self.model.config, 'interleaved_mrope', False)
+    )
+    if not is_mrope:
+        model_names = (type(self).__name__ + type(self.model).__name__).lower()
+        if "qwen" in model_names and "vl" in model_names:
+            is_mrope = True
+
+    orig_pos_ndim = 3 if is_mrope else 1
+    max_pos = None
+    prefill_position_ids = position_ids
+    
+    if position_ids is not None:
+        orig_pos_ndim = position_ids.shape[0]
+        max_pos = int(position_ids.max())
+    elif is_mrope:
+        seq_len = embeds.shape[1]
+        prefill_position_ids = torch.arange(seq_len, device=device).unsqueeze(0).repeat(3, 1)
+        max_pos = seq_len - 1
+    # ─────────────────────────────────────────
+
+    compile_allocations = getattr(self.model, "graph_dynamic_vbar_blocks", False) and \
+                          comfy.model_prefetch.malloc_graph_enabled(device)
+    decode_buffers = None
+    if compile_allocations and not comfy.model_management.args.disable_cuda_graphs:
+        init_decode_buffers = getattr(self.model, "init_decode_buffers", None)
+        if init_decode_buffers is not None:
+            decode_buffers = init_decode_buffers(embeds.shape[0], device, execution_dtype)
+
+    decode_tokens = torch.empty((embeds.shape[0], 1), dtype=torch.long, device=device)
+    penalize = penalty_active(repetition_penalty, presence_penalty)
+    penalty_mask = None
+
+    current_input_ids = initial_input_ids
+    for step in tqdm(range(max_length), desc="Generating tokens"):
+        if step > 0:
+            if compile_allocations:
+                comfy.model_prefetch.malloc_graph_begin(device)
+            embeds = self.model.embed_tokens(decode_tokens).to(execution_dtype)
+            current_input_ids = decode_tokens if initial_input_ids is not None else None
+            
+            if max_pos is not None:
+                next_pos = max_pos + step
+                position_ids = torch.full((orig_pos_ndim, 1), next_pos, device=device, dtype=torch.long)
+            else:
+                position_ids = None
+        else:
+            position_ids = prefill_position_ids
+
+        extra = {}
+        if decode_buffers is not None:
+            extra["decode_buffers"] = decode_buffers
+        if step == 0 and deepstack_embeds is not None:
+            extra["deepstack_embeds"] = deepstack_embeds
+            extra["visual_pos_masks"] = visual_pos_masks
+
+        x, _, past_key_values = self.model.forward(
+            None,
+            embeds=embeds,
+            attention_mask=None,
+            past_key_values=past_key_values,
+            input_ids=current_input_ids,
+            position_ids=position_ids,
+            **extra,
+            embeds_info=(embeds_info if step == 0 else None),
+        )
+        logits = self.logits(x)[:, -1]
+
+        if torch.isnan(logits).any() or torch.isinf(logits).any():
+            logits = torch.nan_to_num(logits, nan=0.0, posinf=0.0, neginf=0.0)
+
+        if penalty_mask is None and do_sample and penalize:
+            penalty_mask = torch.zeros((logits.shape[-1],), dtype=torch.bool, device=device)
+            if len(initial_tokens) > 0:
+                penalty_mask.index_fill_(0, torch.tensor(initial_tokens, device=device), True)
+
+        next_token = self.sample_token(
+            logits, temperature, top_k, top_p, min_p, repetition_penalty, [],
+            generator, do_sample=do_sample, presence_penalty=presence_penalty,
+            penalty_mask=penalty_mask,
+        )
+
+        decode_tokens.copy_(next_token)
+        if penalty_mask is not None:
+            penalty_mask.index_fill_(0, decode_tokens[0], True)
+
+        del next_token, logits, x, embeds, position_ids
+
+        if step > 0 and compile_allocations:
+            comfy.model_prefetch.malloc_graph_end()
+
+        token_id = decode_tokens[0].item()
+        generated_token_ids.append(token_id)
+
+        pbar.update(1)
+
+        if token_id in stop_tokens:
+            break
+
+    return generated_token_ids
+
+comfy.text_encoders.llama.BaseGenerate.generate = patched_generate
+print("[iz_chat API] Final Monkey-patch applied: MRoPE fix + NaN/Inf protection")
+
+# ═══════════════════════════════════════════════════════════════════
+# ─── Cache ───
+# ═══════════════════════════════════════════════════════════════════
 routes = PromptServer.instance.routes
 
-# ═══════════════════════════════════════
-# ─── Cache ───
-# ═══════════════════════════════════════
 _cached_clip = None
 _cached_params = {
     'max_length': 512,
@@ -48,7 +193,6 @@ _progress = {
 _is_chat_generating = False
 _generating_lock = threading.Lock()
 
-# Thread-safe flag indicating workflow is executing iz_chat node
 _workflow_running = False
 _workflow_lock = threading.Lock()
 
@@ -97,9 +241,9 @@ def set_gen_params(**kwargs):
     _cached_params.update(kwargs)
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # ─── Image downscaling ───
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 def resize_image_to_mp(img, max_mp, target_size=None):
     from PIL import Image
     import math
@@ -129,7 +273,6 @@ def resize_image_to_mp(img, max_mp, target_size=None):
 
 
 def decode_image_from_base64(b64_data, max_mp=1.0):
-    import torch
     import numpy as np
     from PIL import Image, ImageOps
 
@@ -199,9 +342,9 @@ def decode_image_from_base64(b64_data, max_mp=1.0):
     return result
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # ─── Tqdm interceptor ───
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 class TqdmInterceptor:
     PATTERN = re.compile(
         r'(\d+)/(\d+)\s+\[[\d:]+<[\d:]+,\s*([\d.]+)\s*(?:it/s|s/it)\]'
@@ -242,9 +385,9 @@ class TqdmInterceptor:
         return self.original.isatty()
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # ─── Prompt building ───
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 def build_prompt(system_prompt, messages):
     parts = []
 
@@ -289,9 +432,9 @@ def _finish_progress():
     _progress['active'] = False
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # ─── Generation wrapper ───
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 def do_generate_sync(system_prompt, chat_history, image_b64=None,
                      seed_override=None, force_new_seed=False,
                      max_image_mp=None, max_length=None, seed=None):
@@ -382,6 +525,17 @@ def _do_generate_inner(system_prompt, chat_history, image_b64=None,
             repetition_penalty=float(_cached_params.get('repetition_penalty', 1.05)),
             seed=actual_seed,
         )
+        
+        # ═══════════════════════════════════════════════════════════════════
+        
+        try:
+            if hasattr(comfy.model_prefetch, 'cleanup_prefetch_queues'):
+                comfy.model_prefetch.cleanup_prefetch_queues()
+                print("[iz_chat API] CUDA Graph cache cleaned up (fix for Issue #16441)")
+        except Exception as cleanup_err:
+            print(f"[iz_chat API] Cleanup warning: {cleanup_err}")
+        # ═══════════════════════════════════════════════════════════════════
+
     except Exception as e:
         print(f"[iz_chat API] Generation error: {e}")
         import traceback
@@ -407,9 +561,9 @@ def _do_generate_inner(system_prompt, chat_history, image_b64=None,
     return response_text, actual_seed, None
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # ─── POST /iz_chat/generate ───
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 @routes.post('/iz_chat/generate')
 async def generate(request):
     try:
@@ -455,9 +609,9 @@ async def generate(request):
         return web.json_response({'success': False, 'message': str(e)})
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # ─── POST /iz_chat/regenerate ───
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 @routes.post('/iz_chat/regenerate')
 async def regenerate(request):
     try:
@@ -500,17 +654,17 @@ async def regenerate(request):
         return web.json_response({'success': False, 'message': str(e)})
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # ─── GET /iz_chat/progress ───
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 @routes.get('/iz_chat/progress')
 async def progress(request):
     return web.json_response(_progress)
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # ─── GET /iz_chat/status ───
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 @routes.get('/iz_chat/status')
 async def status(request):
     return web.json_response({
@@ -520,9 +674,9 @@ async def status(request):
     })
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # ─── GET /iz_chat/workflow_status ───
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 @routes.get('/iz_chat/workflow_status')
 async def workflow_status(request):
     return web.json_response({
@@ -530,9 +684,9 @@ async def workflow_status(request):
     })
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # ─── GET /iz_chat/queue_status ───
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 @routes.get('/iz_chat/queue_status')
 async def queue_status(request):
     """
