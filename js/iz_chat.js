@@ -43,16 +43,19 @@ app.registerExtension({
                 updateButtonsState();
                 if (!isGenerating) setStatus("workflow running... you can type, send after finish", "#fa6");
             });
+
             api.addEventListener("execution_success", () => {
                 isWorkflowRunning = false;
                 updateButtonsState();
                 if (!isGenerating) setStatus("ready to chat", "#bbb");
             });
+
             api.addEventListener("execution_error", () => {
                 isWorkflowRunning = false;
                 updateButtonsState();
                 if (!isGenerating) setStatus("ready to chat", "#bbb");
             });
+
             api.addEventListener("execution_interrupted", () => {
                 isWorkflowRunning = false;
                 updateButtonsState();
@@ -65,6 +68,7 @@ app.registerExtension({
                 chatHistoryWidget.computeSize = () => [0, -4];
                 chatHistoryWidget.serializeValue = () => chatHistoryWidget.value;
                 chatHistoryWidget.draw = function () {};
+
                 setTimeout(() => {
                     if (chatHistoryWidget.element) {
                         chatHistoryWidget.element.style.display = "none";
@@ -74,11 +78,15 @@ app.registerExtension({
                         chatHistoryWidget.element.style.height = "0";
                     }
                 }, 100);
+
                 Object.defineProperty(chatHistoryWidget, "hidden", { value: true, writable: false });
             }
 
             const onResize = node.onResize;
-            node.onResize = function (size) { currentWidth = size[0]; onResize?.apply(this, arguments); };
+            node.onResize = function (size) {
+                currentWidth = size[0];
+                onResize?.apply(this, arguments);
+            };
 
             const styleId = "iz-chat-styles";
             if (!document.getElementById(styleId)) {
@@ -148,54 +156,71 @@ app.registerExtension({
 
             const container = document.createElement("div");
             container.className = "iz-chat-container";
+
             const status = document.createElement("div");
             status.className = "iz-chat-status";
             status.textContent = "ready to chat";
             container.appendChild(status);
+
             const progressWrap = document.createElement("div");
             progressWrap.className = "iz-progress-wrap";
+
             const progressTrack = document.createElement("div");
             progressTrack.className = "iz-progress-track";
+
             const progressFill = document.createElement("div");
             progressFill.className = "iz-progress-fill";
             progressTrack.appendChild(progressFill);
             progressWrap.appendChild(progressTrack);
+
             const progressInfo = document.createElement("div");
             progressInfo.className = "iz-progress-info";
+
             const progressStage = document.createElement("span");
             progressStage.textContent = "";
+
             const progressTokens = document.createElement("span");
             progressTokens.className = "iz-progress-tokens";
+
             const progressSpeed = document.createElement("span");
             progressSpeed.className = "iz-progress-speed";
+
             progressInfo.append(progressStage, progressTokens, progressSpeed);
             progressWrap.appendChild(progressInfo);
             container.appendChild(progressWrap);
+
             const imgStatus = document.createElement("div");
             imgStatus.className = "iz-chat-image-status";
             imgStatus.textContent = "";
             container.appendChild(imgStatus);
+
             const chatContainer = document.createElement("div");
             chatContainer.className = "iz-chat-messages";
             container.appendChild(chatContainer);
+
             const inputRow = document.createElement("div");
             inputRow.className = "iz-chat-input-row";
+
             const inputField = document.createElement("textarea");
             inputField.className = "iz-chat-input";
             inputField.placeholder = "type a message...";
             inputField.rows = 3;
             inputRow.appendChild(inputField);
+
             const sendBtn = document.createElement("button");
             sendBtn.className = "iz-chat-send";
             sendBtn.innerHTML = "↑";
             sendBtn.title = "Send message";
             inputRow.appendChild(sendBtn);
+
             container.appendChild(inputRow);
+
             const generateBtn = document.createElement("button");
             generateBtn.className = "iz-chat-generate";
             generateBtn.innerHTML = "⟳ generate response";
             generateBtn.title = "Generate response to the last user message";
             container.appendChild(generateBtn);
+
             const clearBtn = document.createElement("button");
             clearBtn.className = "iz-chat-clear";
             clearBtn.textContent = "clear chat";
@@ -212,13 +237,25 @@ app.registerExtension({
             }
 
             async function isServerQueueActive() {
-                try { const resp = await fetch("/iz_chat/queue_status"); const data = await resp.json(); return data.active; }
-                catch (e) { return false; }
+                try {
+                    const resp = await fetch("/iz_chat/queue_status");
+                    const data = await resp.json();
+                    return data.active;
+                } catch (e) {
+                    return false;
+                }
             }
+
             async function isNodeWorkflowRunning() {
-                try { const resp = await fetch("/iz_chat/workflow_status"); const data = await resp.json(); return data.workflow_running; }
-                catch (e) { return false; }
+                try {
+                    const resp = await fetch("/iz_chat/workflow_status");
+                    const data = await resp.json();
+                    return data.workflow_running;
+                } catch (e) {
+                    return false;
+                }
             }
+
             async function isAnyWorkflowActive() {
                 if (await isServerQueueActive()) return true;
                 return await isNodeWorkflowRunning();
@@ -232,12 +269,9 @@ app.registerExtension({
                 const maxH = lineHeight * 5 + 12;
                 inputField.style.height = Math.max(minH, Math.min(scrollH, maxH)) + "px";
             }
+
             inputField.oninput = autoResizeInput;
             setTimeout(autoResizeInput, 100);
-
-            // ═══════════════════════════════════════
-            // ─── NODE TYPE HELPERS ───
-            // ═══════════════════════════════════════
 
             function isNodeInactive(n) {
                 if (!n) return true;
@@ -261,16 +295,11 @@ app.registerExtension({
                 return t.includes("anyswitch") || t.includes("any switch");
             }
 
-            /**
-             * Detects ANY Get Node.
-             * Matches: GetNode, GetNode[Any], FastContextGet,
-             * Get_text_to_iz_chat (custom), get node, etc.
-             */
             function isGetNode(srcNode) {
                 if (!srcNode || !srcNode.type) return false;
                 const t = srcNode.type.toLowerCase();
-                if (t.startsWith("get_")) return true;           // Get_text_to_iz_chat
-                if (t.startsWith("get")) return true;           // GetNode, GetNode[Any], GetAnything
+                if (t.startsWith("get_")) return true;
+                if (t.startsWith("get")) return true;
                 if (t.includes("getnode")) return true;
                 if (t.includes("get_node")) return true;
                 if (t.includes("get node")) return true;
@@ -282,17 +311,11 @@ app.registerExtension({
                 return false;
             }
 
-            /**
-             * Detects ANY Set Node.
-             * Matches: SetNode, SetNode[Any], FastContextSet,
-             * Set_text_to_iz_chat (custom), set node, etc.
-             * to support custom-named Set nodes like "Set_text_to_iz_chat".
-             */
             function isSetNode(srcNode) {
                 if (!srcNode || !srcNode.type) return false;
                 const t = srcNode.type.toLowerCase();
-                if (t.startsWith("set_")) return true;           // Set_text_to_iz_chat ← THIS!
-                if (t.startsWith("set")) return true;           // SetNode, SetNode[Any], SetAnything
+                if (t.startsWith("set_")) return true;
+                if (t.startsWith("set")) return true;
                 if (t.includes("setnode")) return true;
                 if (t.includes("set_node")) return true;
                 if (t.includes("set node")) return true;
@@ -304,20 +327,15 @@ app.registerExtension({
                 return false;
             }
 
-            /**
-             * Gets the "name" value from a Set/Get Node.
-             * Checks many possible widget names.
-             *
-             * IMPORTANT: This returns the VALUE in the widget (e.g., "text_to_iz_chat"),
-             * NOT the node type (e.g., "Set_text_to_iz_chat").
-             */
             function getGetSetName(n) {
                 if (!n || !n.widgets) return null;
+
                 const nameKeys = [
                     "name", "set_name", "node_name", "setname", "nodename",
                     "context_name", "contextname", "key", "id", "label",
                     "get_name", "getname", "identifier", "bus_name", "busname"
                 ];
+
                 for (const w of n.widgets) {
                     const wName = (w.name || "").toLowerCase();
                     if (nameKeys.includes(wName)) {
@@ -326,19 +344,16 @@ app.registerExtension({
                         }
                     }
                 }
-                // Fallback: return the first string widget value
+
                 for (const w of n.widgets) {
                     if (typeof w.value === 'string' && w.value.length > 0 && w.value.length < 100) {
                         return w.value;
                     }
                 }
+
                 return null;
             }
 
-            /**
-             * Gets all nodes from the current graph (workflow).
-             * These are the SAME nodes visible in ComfyUI canvas.
-             */
             function getAllGraphNodes() {
                 if (app.graph) {
                     if (app.graph._nodes && app.graph._nodes.length > 0) return app.graph._nodes;
@@ -348,13 +363,6 @@ app.registerExtension({
                 return [];
             }
 
-            /**
-             * Debug: lists ALL nodes whose type contains "set" or "get".
-             * Shows: type, id, mode, and ALL widgets with their values.
-             *
-             * Called at startup AND when searching for Set Node (so you see
-             * exactly what's happening).
-             */
             function debugListSetGetNodes(context) {
                 const nodes = getAllGraphNodes();
                 if (nodes.length === 0) {
@@ -364,37 +372,35 @@ app.registerExtension({
 
                 console.log(`\n[iz_chat] ═══ DEBUG ${context}: Set/Get nodes (${nodes.length} total nodes) ═══`);
                 let found = 0;
+
                 for (const n of nodes) {
                     if (!n || !n.type) continue;
+
                     const t = n.type.toLowerCase();
                     if (t.includes("set") || t.includes("get") || t.includes("context")) {
                         found++;
+
                         const widgetList = n.widgets ? n.widgets.map(w => {
                             const v = typeof w.value === 'string' && w.value.length > 50
-                                ? w.value.substring(0, 50) + "..." : w.value;
+                                ? w.value.substring(0, 50) + "..."
+                                : w.value;
                             return `${w.name}="${v}"`;
                         }).join(", ") : "no widgets";
+
                         console.log(`[iz_chat]   [${found}] type="${n.type}" id=${n.id} mode=${n.mode} inactive=${isNodeInactive(n)}`);
                         console.log(`[iz_chat]       widgets: ${widgetList}`);
                         console.log(`[iz_chat]       inputs: ${n.inputs ? n.inputs.length : 0}, outputs: ${n.outputs ? n.outputs.length : 0}`);
                         console.log(`[iz_chat]       isSetNode=${isSetNode(n)}, isGetNode=${isGetNode(n)}, setName="${getGetSetName(n)}"`);
                     }
                 }
+
                 if (found === 0) {
                     console.log(`[iz_chat]   No Set/Get nodes found in graph`);
                 }
+
                 console.log(`[iz_chat] ═══ END DEBUG ═══\n`);
             }
 
-            /**
-             * Finds a Set Node whose WIDGET VALUE matches targetName.
-             *
-             * Example: targetName = "text_to_iz_chat"
-             *   → Finds node with type "Set_text_to_iz_chat" whose widget
-             *     "name" has value "text_to_iz_chat".
-             *
-             * Searches ALL nodes in the current workflow.
-             */
             function findSetNodeByName(targetName) {
                 if (!targetName) return null;
 
@@ -440,9 +446,64 @@ app.registerExtension({
                 return null;
             }
 
-            // ═══════════════════════════════════════
-            // ─── REMOTE SET NODE RESOLVERS ───
-            // ═══════════════════════════════════════
+            function formatFloatAsString(val) {
+                const num = Number(val);
+                if (!Number.isFinite(num)) return String(val);
+                if (Number.isInteger(num)) return String(num);
+                return String(parseFloat(num.toFixed(10)));
+            }
+
+            function normalizeSeparatorString(sep) {
+                if (sep === undefined || sep === null) return " ";
+                let s = String(sep);
+                s = s.replace(/\\n/g, "\n");
+                s = s.replace(/\\t/g, "\t");
+                return s;
+            }
+
+            function getNodeSeparator(srcNode) {
+                if (!srcNode || !srcNode.widgets) return " ";
+
+                const separatorKeys = [
+                    "delimiter",
+                    "separator",
+                    "delim",
+                    "sep",
+                    "glue",
+                    "join",
+                    "divider"
+                ];
+
+                for (const w of srcNode.widgets) {
+                    const name = (w.name || "").toLowerCase();
+                    const isSeparatorWidget = separatorKeys.some(key => name.includes(key));
+
+                    if (!isSeparatorWidget) continue;
+                    if (w.value === undefined || w.value === null) continue;
+
+                    return normalizeSeparatorString(w.value);
+                }
+
+                return " ";
+            }
+
+            function isStringConcatenateNode(srcNode) {
+                if (!srcNode) return false;
+
+                const t = (srcNode.type || "").toLowerCase();
+                const c = (srcNode.comfyClass || "").toLowerCase();
+
+                return (
+                    t.includes("stringconcatenate") ||
+                    t.includes("string concatenate") ||
+                    c.includes("stringconcatenate") ||
+                    c.includes("string concatenate")
+                );
+            }
+
+            function getStringConcatenateSeparator(srcNode) {
+                return getNodeSeparator(srcNode);
+            }
 
             function resolveRemoteSetText(setNodeName) {
                 debugListSetGetNodes(`searching text "${setNodeName}"`);
@@ -478,9 +539,12 @@ app.registerExtension({
                 }
 
                 if (setNode.widgets) {
-                    const nameKeys = ["name", "set_name", "node_name", "setname", "nodename",
-                                      "context_name", "contextname", "key", "id", "label",
-                                      "get_name", "getname", "identifier", "bus_name", "busname"];
+                    const nameKeys = [
+                        "name", "set_name", "node_name", "setname", "nodename",
+                        "context_name", "contextname", "key", "id", "label",
+                        "get_name", "getname", "identifier", "bus_name", "busname"
+                    ];
+
                     for (const w of setNode.widgets) {
                         if (w.value && typeof w.value === 'string' && w.value.length > 0) {
                             const wName = (w.name || "").toLowerCase();
@@ -511,6 +575,7 @@ app.registerExtension({
 
                 if (setNode._lastOutput) {
                     const lo = setNode._lastOutput;
+
                     if (lo.images && Array.isArray(lo.images)) {
                         for (const img of lo.images) {
                             let url = `/view?filename=${encodeURIComponent(img.filename)}`;
@@ -521,6 +586,7 @@ app.registerExtension({
                         }
                         if (urls.length > 0) return urls;
                     }
+
                     if (lo.gifs && Array.isArray(lo.gifs)) {
                         for (const img of lo.gifs) {
                             let url = `/view?filename=${encodeURIComponent(img.filename)}`;
@@ -548,10 +614,6 @@ app.registerExtension({
 
                 return urls;
             }
-
-            // ═══════════════════════════════════════
-            // ─── VALUE RESOLUTION ───
-            // ═══════════════════════════════════════
 
             function getWidgetValue(widgetName) {
                 const input = node.inputs?.find(i => i.name === widgetName);
@@ -582,6 +644,207 @@ app.registerExtension({
                 if (depth > 15 || !srcNode) return null;
                 if (isNodeInactive(srcNode)) return null;
 
+                const nodeType = (srcNode.type || "").toLowerCase();
+                const comfyClass = (srcNode.comfyClass || "").toLowerCase();
+
+                // ───────────────────────────────────────────────
+                // Support: TriggerWord Toggle (LoraManager)
+				// https://github.com/willmiao/ComfyUI-Lora-Manager
+                // ───────────────────────────────────────────────
+                const isTriggerToggle =
+                    nodeType.includes("triggerword toggle") ||
+                    comfyClass.includes("triggerword toggle");
+
+                if (isTriggerToggle) {
+                    const tagWidget = srcNode.widgets?.find(w => w.name === "toggle_trigger_words");
+                    const groupModeWidget = srcNode.widgets?.find(w => w.name === "group_mode");
+                    const allowStrengthWidget = srcNode.widgets?.find(w => w.name === "allow_strength_adjustment");
+
+                    if (tagWidget && Array.isArray(tagWidget.value)) {
+                        const groupMode = groupModeWidget ? !!groupModeWidget.value : false;
+                        const allowStrength = allowStrengthWidget ? !!allowStrengthWidget.value : false;
+
+                        const results = [];
+
+                        for (const item of tagWidget.value) {
+                            if (!item || !item.active) continue;
+
+                            let text = (item.text || "").trim();
+                            let strength = item.strength;
+                            let itemText = text;
+
+                            const match = text.match(/^\((.+):([\d.]+)\)$/);
+                            if (match) {
+                                itemText = match[1].trim();
+                                if (strength === undefined || strength === null || isNaN(strength)) {
+                                    strength = parseFloat(match[2]);
+                                }
+                            }
+
+                            let finalText = "";
+
+                            if (groupMode && Array.isArray(item.items)) {
+                                const activeItems = [];
+
+                                for (const child of item.items) {
+                                    if (child && child.active && child.text) {
+                                        activeItems.push(child.text.trim());
+                                    }
+                                }
+
+                                if (activeItems.length === 0) continue;
+                                finalText = activeItems.join(", ");
+                            } else {
+                                finalText = itemText;
+                            }
+
+                            if (allowStrength && strength !== undefined && strength !== null && !isNaN(strength)) {
+                                finalText = `(${finalText}:${strength.toFixed(2)})`;
+                            }
+
+                            if (finalText) results.push(finalText);
+                        }
+
+                        if (results.length > 0) return results.join(", ");
+                        return "";
+                    }
+                }
+
+                // ───────────────────────────────────────────────
+                // Support: Float Split / iz_float_split 
+				// https://github.com/IZmake/iz_comfy_tools/blob/main/iz_float_split_01.py
+				// https://github.com/IZmake/iz_comfy_tools/blob/main/iz_float_split_05.py
+                // ───────────────────────────────────────────────
+                const isFloatSplitNode =
+                    nodeType.includes("iz_float_split") ||
+                    nodeType.includes("float split") ||
+                    comfyClass.includes("iz_float_split");
+
+                if (isFloatSplitNode) {
+                    const valueWidget = srcNode.widgets?.find(w => {
+                        const n = (w.name || "").toLowerCase();
+                        return n === "value" || n === "float" || n === "int";
+                    });
+
+                    if (
+                        valueWidget &&
+                        valueWidget.value !== undefined &&
+                        valueWidget.value !== null &&
+                        valueWidget.value !== ""
+                    ) {
+                        const rawVal = parseFloat(valueWidget.value);
+
+                        if (Number.isFinite(rawVal)) {
+                            if (expectedType === "STRING" || expectedType === "TEXT") {
+                                return formatFloatAsString(rawVal);
+                            }
+
+                            if (slotIndex === 1) {
+                                return formatFloatAsString(rawVal);
+                            }
+
+                            if (slotIndex === 2) {
+                                return Math.trunc(rawVal);
+                            }
+
+                            if (slotIndex === 0) {
+                                return rawVal;
+                            }
+
+                            return formatFloatAsString(rawVal);
+                        }
+                    }
+                }
+
+                // ───────────────────────────────────────────────
+                // Support: StringConcatenate
+                // ───────────────────────────────────────────────
+                if (isStringConcatenateNode(srcNode)) {
+                    const separator = getStringConcatenateSeparator(srcNode);
+                    const parts = [];
+                    const processedInputNames = new Set();
+
+                    if (srcNode.inputs) {
+                        for (const inp of srcNode.inputs) {
+                            const inpType = (inp.type || "").toUpperCase();
+
+                            if (
+                                inpType !== "STRING" &&
+                                inpType !== "TEXT" &&
+                                inpType !== "*" &&
+                                inpType !== "ANY"
+                            ) {
+                                continue;
+                            }
+
+                            processedInputNames.add((inp.name || "").toLowerCase());
+
+                            if (inp.link) {
+                                const l = app.graph.links[inp.link];
+                                if (l) {
+                                    const upstream = app.graph.getNodeById(l.origin_id);
+                                    const v = resolveValueFromNode(
+                                        upstream,
+                                        l.origin_slot,
+                                        depth + 1,
+                                        "STRING"
+                                    );
+
+                                    if (v !== null && v !== undefined && String(v).length > 0) {
+                                        parts.push(String(v));
+                                    }
+                                }
+                            } else {
+                                const w = srcNode.widgets?.find(w => w.name === inp.name);
+                                if (w && typeof w.value === "string" && w.value.length > 0) {
+                                    parts.push(w.value);
+                                }
+                            }
+                        }
+                    }
+
+                    if (srcNode.widgets) {
+                        const skipKeys = [
+                            "delimiter",
+                            "separator",
+                            "delim",
+                            "sep",
+                            "glue",
+                            "join",
+                            "divider"
+                        ];
+
+                        const textKeys = [
+                            "text",
+                            "string",
+                            "value",
+                            "input"
+                        ];
+
+                        for (const w of srcNode.widgets) {
+                            const name = (w.name || "").toLowerCase();
+
+                            if (processedInputNames.has(name)) continue;
+                            if (skipKeys.some(key => name.includes(key))) continue;
+                            if (!textKeys.some(key => name.includes(key))) continue;
+
+                            if (typeof w.value !== "string") continue;
+                            if (w.value.length === 0) continue;
+
+                            parts.push(w.value);
+                        }
+                    }
+
+                    if (parts.length > 0) {
+                        return parts.join(separator);
+                    }
+
+                    return "";
+                }
+
+                // ───────────────────────────────────────────────
+                // Generic Get/Set support
+                // ───────────────────────────────────────────────
                 if (isGetNode(srcNode)) {
                     const getName = getGetSetName(srcNode);
                     if (!getName) return null;
@@ -619,9 +882,14 @@ app.registerExtension({
                     for (const w of srcNode.widgets) {
                         if (w.value && typeof w.value === 'string' && w.value.length > 0) {
                             const name = (w.name || "").toLowerCase();
-                            if (name.includes('text') || name.includes('value') ||
-                                name.includes('output') || name.includes('result') ||
-                                name.includes('string') || name.includes('prompt')) {
+                            if (
+                                name.includes('text') ||
+                                name.includes('value') ||
+                                name.includes('output') ||
+                                name.includes('result') ||
+                                name.includes('string') ||
+                                name.includes('prompt')
+                            ) {
                                 return w.value;
                             }
                         }
@@ -632,6 +900,7 @@ app.registerExtension({
                     if (srcNode.inputs) {
                         for (const inp of srcNode.inputs) {
                             if (!inp.link) continue;
+
                             const l = app.graph.links[inp.link];
                             if (!l) continue;
 
@@ -664,6 +933,7 @@ app.registerExtension({
 
                 if (srcNode.inputs && srcNode.inputs.length > 0) {
                     const parts = [];
+
                     for (const inp of srcNode.inputs) {
                         const inpType = (inp.type || "").toUpperCase();
                         if (inpType !== "STRING" && inpType !== "TEXT") continue;
@@ -677,15 +947,14 @@ app.registerExtension({
                             }
                         }
                     }
-                    if (parts.length > 0) return parts.join(" ");
+
+                    if (parts.length > 0) {
+                        return parts.join(getNodeSeparator(srcNode));
+                    }
                 }
 
                 return null;
             }
-
-            // ═══════════════════════════════════════
-            // ─── IMAGE COLLECTION ───
-            // ═══════════════════════════════════════
 
             function collectImagesFromNode(srcNode, urls, visitedNodes, depth) {
                 if (!srcNode || visitedNodes.has(srcNode.id)) return;
@@ -724,6 +993,7 @@ app.registerExtension({
                     const imgWidget = srcNode.widgets?.find(w => w.name === "image");
                     const subfolderWidget = srcNode.widgets?.find(w => w.name === "subfolder");
                     const subfolder = subfolderWidget?.value || "";
+
                     if (imgWidget && imgWidget.value) {
                         const filename = imgWidget.value;
                         let url = `/view?filename=${encodeURIComponent(filename)}&type=input`;
@@ -738,6 +1008,7 @@ app.registerExtension({
                     if (srcNode.inputs) {
                         for (const inp of srcNode.inputs) {
                             if (!inp.link) continue;
+
                             const l = app.graph.links[inp.link];
                             if (!l) continue;
 
@@ -783,6 +1054,7 @@ app.registerExtension({
                         }
                         if (urls.length > 0) return;
                     }
+
                     if (lastOut.gifs && Array.isArray(lastOut.gifs)) {
                         for (const img of lastOut.gifs) {
                             let url = `/view?filename=${encodeURIComponent(img.filename)}`;
@@ -837,7 +1109,9 @@ app.registerExtension({
                         const cfgNode = app.graph.getNodeById(link.origin_id);
                         if (cfgNode) {
                             const limitWidget = cfgNode.widgets?.find(w => w.name === "token_limit");
-                            if (limitWidget && limitWidget.value !== undefined) return parseInt(limitWidget.value) || 4096;
+                            if (limitWidget && limitWidget.value !== undefined) {
+                                return parseInt(limitWidget.value) || 4096;
+                            }
                         }
                     }
                 }
@@ -845,7 +1119,13 @@ app.registerExtension({
             }
 
             function readCfgParams() {
-                const params = { max_image_mp: 1.0, max_length: 512, seed: 777, token_limit: 4096 };
+                const params = {
+                    max_image_mp: 1.0,
+                    max_length: 512,
+                    seed: 777,
+                    token_limit: 4096
+                };
+
                 const cfgInput = node.inputs?.find(i => i.name === "cfg");
                 if (cfgInput && cfgInput.link) {
                     const link = app.graph.links[cfgInput.link];
@@ -853,55 +1133,96 @@ app.registerExtension({
                         const cfgNode = app.graph.getNodeById(link.origin_id);
                         if (cfgNode) {
                             const mpWidget = cfgNode.widgets?.find(w => w.name === "max_image_mp");
-                            if (mpWidget && mpWidget.value !== undefined) params.max_image_mp = parseFloat(mpWidget.value);
+                            if (mpWidget && mpWidget.value !== undefined) {
+                                params.max_image_mp = parseFloat(mpWidget.value);
+                            }
+
                             const mlWidget = cfgNode.widgets?.find(w => w.name === "max_length");
-                            if (mlWidget && mlWidget.value !== undefined) params.max_length = parseInt(mlWidget.value);
+                            if (mlWidget && mlWidget.value !== undefined) {
+                                params.max_length = parseInt(mlWidget.value);
+                            }
+
                             const seedWidget = cfgNode.widgets?.find(w => w.name === "seed");
-                            if (seedWidget && seedWidget.value !== undefined) params.seed = parseInt(seedWidget.value);
+                            if (seedWidget && seedWidget.value !== undefined) {
+                                params.seed = parseInt(seedWidget.value);
+                            }
+
                             const limitWidget = cfgNode.widgets?.find(w => w.name === "token_limit");
-                            if (limitWidget && limitWidget.value !== undefined) params.token_limit = parseInt(limitWidget.value);
+                            if (limitWidget && limitWidget.value !== undefined) {
+                                params.token_limit = parseInt(limitWidget.value);
+                            }
                         }
                     }
                 }
+
                 return params;
             }
 
-            function estimateTextTokens(text) { return text ? Math.ceil(text.length / 3.5) : 0; }
-            function estimateImageTokens(w, h) { return (w && h) ? Math.ceil((w * h) / 784) : 0; }
+            function estimateTextTokens(text) {
+                return text ? Math.ceil(text.length / 3.5) : 0;
+            }
+
+            function estimateImageTokens(w, h) {
+                return (w && h) ? Math.ceil((w * h) / 784) : 0;
+            }
 
             function calculateTokenUsage() {
                 let total = 0;
                 total += estimateTextTokens(getWidgetValue("system_prompt") || "");
-                for (const msg of chatHistory) { total += estimateTextTokens(msg.content); total += 4; }
-                for (const size of loadedImageSizes) total += estimateImageTokens(size.width, size.height);
+
+                for (const msg of chatHistory) {
+                    total += estimateTextTokens(msg.content);
+                    total += 4;
+                }
+
+                for (const size of loadedImageSizes) {
+                    total += estimateImageTokens(size.width, size.height);
+                }
+
                 return total;
             }
 
             async function updateImageSizes() {
                 const urls = getImageUrls();
-                if (!urls || urls.length === 0) { loadedImageSizes = []; return; }
+                if (!urls || urls.length === 0) {
+                    loadedImageSizes = [];
+                    return;
+                }
+
                 const sizes = [];
+
                 for (const url of urls) {
                     try {
                         const resp = await fetch(url, { cache: 'no-store' });
                         if (!resp.ok) continue;
+
                         const contentType = resp.headers.get('content-type') || '';
                         if (!contentType.startsWith('image/')) continue;
+
                         const blob = await resp.blob();
                         const imgBitmap = await createImageBitmap(blob);
-                        sizes.push({ width: imgBitmap.width, height: imgBitmap.height });
+
+                        sizes.push({
+                            width: imgBitmap.width,
+                            height: imgBitmap.height
+                        });
+
                         imgBitmap.close();
                     } catch (e) {}
                 }
+
                 loadedImageSizes = sizes;
             }
 
             function updateIdleProgress() {
                 if (isGenerating) return;
+
                 const currentTokenLimit = getTokenLimitFromCfg();
                 const used = calculateTokenUsage();
                 const pct = Math.min((used / currentTokenLimit) * 100, 100);
+
                 progressFill.style.width = `${pct}%`;
+
                 if (used > currentTokenLimit) {
                     progressFill.classList.add("over-limit");
                     progressFill.classList.remove("generating");
@@ -913,6 +1234,7 @@ app.registerExtension({
                     progressTokens.textContent = `${used}/${currentTokenLimit} tokens`;
                     progressTokens.classList.remove("danger");
                 }
+
                 progressStage.textContent = "";
                 progressSpeed.textContent = "";
             }
@@ -920,52 +1242,105 @@ app.registerExtension({
             function hashContext(messages) {
                 const str = JSON.stringify(messages.map(m => ({ r: m.role, c: m.content })));
                 let hash = 0;
-                for (let i = 0; i < str.length; i++) { hash = ((hash << 5) - hash) + str.charCodeAt(i); hash |= 0; }
+
+                for (let i = 0; i < str.length; i++) {
+                    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+                    hash |= 0;
+                }
+
                 return hash.toString(16);
             }
 
-            function setStatus(text, color) { status.textContent = text; status.style.color = color || "#bbb"; }
+            function setStatus(text, color) {
+                status.textContent = text;
+                status.style.color = color || "#bbb";
+            }
 
             function copyToClipboard(text) {
-                if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+                if (navigator.clipboard && window.isSecureContext) {
+                    return navigator.clipboard.writeText(text);
+                }
+
                 const ta = document.createElement("textarea");
-                ta.value = text; ta.style.position = "fixed"; ta.style.left = "-9999px";
-                document.body.appendChild(ta); ta.select(); document.execCommand("copy");
-                document.body.removeChild(ta); return Promise.resolve();
+                ta.value = text;
+                ta.style.position = "fixed";
+                ta.style.left = "-9999px";
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand("copy");
+                document.body.removeChild(ta);
+                return Promise.resolve();
             }
 
             async function imagesToBase64() {
                 const urls = getImageUrls();
-                if (!urls || urls.length === 0) { imgStatus.textContent = ""; loadedImageSizes = []; return null; }
+                if (!urls || urls.length === 0) {
+                    imgStatus.textContent = "";
+                    loadedImageSizes = [];
+                    return null;
+                }
+
                 imgStatus.textContent = `loading ${urls.length} image(s)...`;
                 imgStatus.style.color = "#8abaff";
-                const b64List = []; const sizes = [];
-                let successCount = 0; let failCount = 0;
+
+                const b64List = [];
+                const sizes = [];
+                let successCount = 0;
+                let failCount = 0;
+
                 for (const url of urls) {
                     try {
                         const resp = await fetch(url, { cache: 'no-store' });
-                        if (!resp.ok) { failCount++; continue; }
+                        if (!resp.ok) {
+                            failCount++;
+                            continue;
+                        }
+
                         const contentType = resp.headers.get('content-type') || '';
-                        if (!contentType.startsWith('image/')) { failCount++; continue; }
+                        if (!contentType.startsWith('image/')) {
+                            failCount++;
+                            continue;
+                        }
+
                         const blob = await resp.blob();
+
                         try {
                             const imgBitmap = await createImageBitmap(blob);
-                            sizes.push({ width: imgBitmap.width, height: imgBitmap.height });
+                            sizes.push({
+                                width: imgBitmap.width,
+                                height: imgBitmap.height
+                            });
                             imgBitmap.close();
                         } catch (e) {}
+
                         const b64 = await new Promise((resolve, reject) => {
                             const reader = new FileReader();
                             reader.onloadend = () => resolve(reader.result);
                             reader.onerror = reject;
                             reader.readAsDataURL(blob);
                         });
-                        b64List.push(b64); successCount++;
-                    } catch (e) { failCount++; }
+
+                        b64List.push(b64);
+                        successCount++;
+                    } catch (e) {
+                        failCount++;
+                    }
                 }
+
                 loadedImageSizes = sizes;
-                if (successCount === 0) { imgStatus.textContent = `failed to load images`; imgStatus.style.color = "#f66"; return null; }
-                else if (failCount > 0) { imgStatus.textContent = `${successCount}/${urls.length} loaded`; imgStatus.style.color = "#fa6"; }
-                else { imgStatus.textContent = `${successCount} image(s)`; imgStatus.style.color = "#8f8"; }
+
+                if (successCount === 0) {
+                    imgStatus.textContent = `failed to load images`;
+                    imgStatus.style.color = "#f66";
+                    return null;
+                } else if (failCount > 0) {
+                    imgStatus.textContent = `${successCount}/${urls.length} loaded`;
+                    imgStatus.style.color = "#fa6";
+                } else {
+                    imgStatus.textContent = `${successCount} image(s)`;
+                    imgStatus.style.color = "#8f8";
+                }
+
                 if (b64List.length === 0) return null;
                 return b64List;
             }
@@ -974,16 +1349,20 @@ app.registerExtension({
                 stopProgressPolling();
                 progressFill.className = "iz-progress-fill generating";
                 progressTokens.classList.remove("danger");
+
                 progressInterval = setInterval(async () => {
                     try {
                         const resp = await fetch("/iz_chat/progress");
                         const d = await resp.json();
+
                         if (d.active) {
                             progressStage.textContent = d.stage || "";
+
                             if (d.tokens_total > 0) {
                                 progressTokens.textContent = `${d.tokens_current}/${d.tokens_total} tokens`;
                                 progressFill.style.width = `${Math.min((d.tokens_current / d.tokens_total) * 100, 100)}%`;
                             }
+
                             let speedText = "";
                             if (d.speed > 0) speedText = `${d.speed.toFixed(1)} tok/s`;
                             if (d.elapsed > 0) speedText += ` · ${d.elapsed.toFixed(1)}s`;
@@ -994,19 +1373,37 @@ app.registerExtension({
             }
 
             function stopProgressPolling() {
-                if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
+                if (progressInterval) {
+                    clearInterval(progressInterval);
+                    progressInterval = null;
+                }
             }
 
             function updateGenerateButton() {
-                if (chatHistory.length === 0) { generateBtn.classList.remove("visible"); return; }
+                if (chatHistory.length === 0) {
+                    generateBtn.classList.remove("visible");
+                    return;
+                }
+
                 const last = chatHistory[chatHistory.length - 1];
-                if (last.role === "user") generateBtn.classList.add("visible");
-                else generateBtn.classList.remove("visible");
+
+                if (last.role === "user") {
+                    generateBtn.classList.add("visible");
+                } else {
+                    generateBtn.classList.remove("visible");
+                }
             }
 
             function buildMessageEl(msg, index) {
                 const el = document.createElement("div");
-                const rc = msg.role === "user" ? "iz-msg-user" : msg.role === "assistant" ? "iz-msg-assistant" : "iz-msg-system";
+
+                const rc =
+                    msg.role === "user"
+                        ? "iz-msg-user"
+                        : msg.role === "assistant"
+                            ? "iz-msg-assistant"
+                            : "iz-msg-system";
+
                 el.className = `iz-msg ${rc}`;
 
                 if (editingIndex === index) {
@@ -1015,22 +1412,44 @@ app.registerExtension({
                     editArea.value = msg.content;
                     editArea.rows = Math.max(3, msg.content.split("\n").length);
                     el.appendChild(editArea);
+
                     const ctrls = document.createElement("div");
                     ctrls.className = "iz-edit-controls";
+
                     const saveB = document.createElement("button");
-                    saveB.className = "iz-edit-save"; saveB.textContent = "save";
-                    saveB.onclick = () => { chatHistory[index].content = editArea.value; editingIndex = -1; updateChatDisplay(); syncChatWidget(); updateIdleProgress(); };
+                    saveB.className = "iz-edit-save";
+                    saveB.textContent = "save";
+                    saveB.onclick = () => {
+                        chatHistory[index].content = editArea.value;
+                        editingIndex = -1;
+                        updateChatDisplay();
+                        syncChatWidget();
+                        updateIdleProgress();
+                    };
+
                     const cancelB = document.createElement("button");
-                    cancelB.className = "iz-edit-cancel"; cancelB.textContent = "cancel";
-                    cancelB.onclick = () => { editingIndex = -1; updateChatDisplay(); };
-                    ctrls.append(saveB, cancelB); el.appendChild(ctrls);
+                    cancelB.className = "iz-edit-cancel";
+                    cancelB.textContent = "cancel";
+                    cancelB.onclick = () => {
+                        editingIndex = -1;
+                        updateChatDisplay();
+                    };
+
+                    ctrls.append(saveB, cancelB);
+                    el.appendChild(ctrls);
+
                     setTimeout(() => editArea.focus(), 50);
                     return el;
                 }
 
                 const label = document.createElement("span");
                 label.className = "iz-msg-label";
-                label.textContent = msg.role === "user" ? "you" : msg.role === "assistant" ? "assistant" : "system";
+                label.textContent =
+                    msg.role === "user"
+                        ? "you"
+                        : msg.role === "assistant"
+                            ? "assistant"
+                            : "system";
                 el.appendChild(label);
 
                 const textDiv = document.createElement("div");
@@ -1040,20 +1459,30 @@ app.registerExtension({
                 if (msg.role === "assistant" && msg.seed) {
                     const seedRow = document.createElement("div");
                     seedRow.className = "iz-msg-seed-row";
+
                     const seedDiv = document.createElement("span");
                     seedDiv.className = "iz-msg-seed";
                     seedDiv.textContent = `seed: ${msg.seed}`;
                     seedRow.appendChild(seedDiv);
+
                     const copyB = document.createElement("button");
-                    copyB.className = "iz-msg-copy"; copyB.textContent = "⧉"; copyB.title = "Copy text";
+                    copyB.className = "iz-msg-copy";
+                    copyB.textContent = "⧉";
+                    copyB.title = "Copy text";
                     copyB.onclick = (e) => {
                         e.stopPropagation();
                         copyToClipboard(msg.content).then(() => {
                             setStatus("copied", "#8f8");
-                            setTimeout(() => { if (!isWorkflowRunning && !isGenerating) setStatus("ready to chat", "#bbb"); }, 1500);
+                            setTimeout(() => {
+                                if (!isWorkflowRunning && !isGenerating) {
+                                    setStatus("ready to chat", "#bbb");
+                                }
+                            }, 1500);
                         });
                     };
-                    seedRow.appendChild(copyB); el.appendChild(seedRow);
+
+                    seedRow.appendChild(copyB);
+                    el.appendChild(seedRow);
                 }
 
                 const controls = document.createElement("div");
@@ -1061,37 +1490,75 @@ app.registerExtension({
 
                 if (msg.role === "assistant") {
                     const regenB = document.createElement("button");
-                    regenB.className = "iz-msg-btn iz-msg-btn-regen"; regenB.textContent = "⟳"; regenB.title = "Regenerate";
-                    regenB.onclick = (e) => { e.stopPropagation(); regenerateMessage(index); };
-                    regenButtons.push(regenB); controls.appendChild(regenB);
+                    regenB.className = "iz-msg-btn iz-msg-btn-regen";
+                    regenB.textContent = "⟳";
+                    regenB.title = "Regenerate";
+                    regenB.onclick = (e) => {
+                        e.stopPropagation();
+                        regenerateMessage(index);
+                    };
+
+                    regenButtons.push(regenB);
+                    controls.appendChild(regenB);
 
                     const anchorB = document.createElement("button");
-                    anchorB.className = "iz-msg-btn iz-msg-btn-anchor"; anchorB.textContent = "⚓";
+                    anchorB.className = "iz-msg-btn iz-msg-btn-anchor";
+                    anchorB.textContent = "⚓";
                     anchorB.title = "Start new chat from this message";
                     anchorB.onclick = (e) => {
                         e.stopPropagation();
+
                         if (confirm("Start new chat from this message?\nAll history will be deleted.")) {
-                            chatHistory = [{ ...chatHistory[index] }]; editingIndex = -1;
-                            updateChatDisplay(); syncChatWidget(); updateIdleProgress();
+                            chatHistory = [{ ...chatHistory[index] }];
+                            editingIndex = -1;
+
+                            updateChatDisplay();
+                            syncChatWidget();
+                            updateIdleProgress();
+
                             setStatus("chat started from this message", "#8f8");
-                            setTimeout(() => { if (!isWorkflowRunning && !isGenerating) setStatus("ready to chat", "#bbb"); }, 2000);
+
+                            setTimeout(() => {
+                                if (!isWorkflowRunning && !isGenerating) {
+                                    setStatus("ready to chat", "#bbb");
+                                }
+                            }, 2000);
                         }
                     };
+
                     controls.appendChild(anchorB);
                 }
 
                 const editB = document.createElement("button");
-                editB.className = "iz-msg-btn"; editB.textContent = "✎"; editB.title = "Edit";
-                editB.onclick = (e) => { e.stopPropagation(); editingIndex = index; updateChatDisplay(); };
+                editB.className = "iz-msg-btn";
+                editB.textContent = "✎";
+                editB.title = "Edit";
+                editB.onclick = (e) => {
+                    e.stopPropagation();
+                    editingIndex = index;
+                    updateChatDisplay();
+                };
                 controls.appendChild(editB);
 
                 const delB = document.createElement("button");
-                delB.className = "iz-msg-btn iz-msg-btn-del"; delB.textContent = "✕"; delB.title = "Delete";
+                delB.className = "iz-msg-btn iz-msg-btn-del";
+                delB.textContent = "✕";
+                delB.title = "Delete";
                 delB.onclick = (e) => {
-                    e.stopPropagation(); chatHistory.splice(index, 1);
-                    updateChatDisplay(); syncChatWidget(); updateIdleProgress();
+                    e.stopPropagation();
+                    chatHistory.splice(index, 1);
+
+                    updateChatDisplay();
+                    syncChatWidget();
+                    updateIdleProgress();
+
                     setStatus("deleted", "#f88");
-                    setTimeout(() => { if (!isWorkflowRunning && !isGenerating) setStatus("ready to chat", "#bbb"); }, 2000);
+
+                    setTimeout(() => {
+                        if (!isWorkflowRunning && !isGenerating) {
+                            setStatus("ready to chat", "#bbb");
+                        }
+                    }, 2000);
                 };
                 controls.appendChild(delB);
 
@@ -1102,140 +1569,286 @@ app.registerExtension({
             function updateChatDisplay() {
                 chatContainer.innerHTML = "";
                 regenButtons = [];
+
                 if (chatHistory.length === 0) {
                     chatContainer.innerHTML = '<div class="iz-chat-empty">chat is empty</div>';
                 } else {
-                    chatHistory.forEach((msg, i) => chatContainer.appendChild(buildMessageEl(msg, i)));
+                    chatHistory.forEach((msg, i) => {
+                        chatContainer.appendChild(buildMessageEl(msg, i));
+                    });
                     chatContainer.scrollTop = chatContainer.scrollHeight;
                 }
+
                 updateGenerateButton();
                 updateButtonsState();
             }
 
-            function syncChatWidget() { if (chatHistoryWidget) chatHistoryWidget.value = JSON.stringify(chatHistory); }
+            function syncChatWidget() {
+                if (chatHistoryWidget) {
+                    chatHistoryWidget.value = JSON.stringify(chatHistory);
+                }
+            }
 
             async function checkModelStatus() {
-                try { const resp = await fetch("/iz_chat/status"); const data = await resp.json(); return data.model_loaded; }
-                catch { return false; }
+                try {
+                    const resp = await fetch("/iz_chat/status");
+                    const data = await resp.json();
+                    return data.model_loaded;
+                } catch {
+                    return false;
+                }
             }
 
             async function runGeneration(url, body, onSuccess) {
                 const modelReady = await checkModelStatus();
-                if (!modelReady) { setStatus("⚠ model not loaded — run workflow", "#fa6"); return; }
-                isGenerating = true; updateButtonsState();
-                setStatus("generating...", "#6af"); startProgressPolling();
+                if (!modelReady) {
+                    setStatus("⚠ model not loaded — run workflow", "#fa6");
+                    return;
+                }
+
+                isGenerating = true;
+                updateButtonsState();
+                setStatus("generating...", "#6af");
+                startProgressPolling();
+
                 try {
-                    const resp = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+                    const resp = await fetch(url, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify(body)
+                    });
+
                     const result = await resp.json();
-                    if (result.success) onSuccess(result);
-                    else setStatus(`✕ ${result.message}`, "#f66");
-                } catch (err) { console.error("[iz_chat]", err); setStatus(`✕ ${err.message}`, "#f66"); }
-                isGenerating = false; updateButtonsState();
-                stopProgressPolling(); updateIdleProgress();
+
+                    if (result.success) {
+                        onSuccess(result);
+                    } else {
+                        setStatus(`✕ ${result.message}`, "#f66");
+                    }
+                } catch (err) {
+                    console.error("[iz_chat]", err);
+                    setStatus(`✕ ${err.message}`, "#f66");
+                }
+
+                isGenerating = false;
+                updateButtonsState();
+                stopProgressPolling();
+                updateIdleProgress();
+
                 const workflowActive = await isAnyWorkflowActive();
                 if (workflowActive) {
-                    isWorkflowRunning = true; updateButtonsState();
+                    isWorkflowRunning = true;
+                    updateButtonsState();
                     setStatus("workflow running... you can type, send after finish", "#fa6");
                 } else {
-                    isWorkflowRunning = false; updateButtonsState();
+                    isWorkflowRunning = false;
+                    updateButtonsState();
                     setStatus("ready to chat", "#bbb");
                 }
             }
 
             async function buildRequestBody(extraData = {}) {
-                const body = { system_prompt: getWidgetValue("system_prompt") || "You are a helpful assistant.", ...extraData };
+                const body = {
+                    system_prompt: getWidgetValue("system_prompt") || "You are a helpful assistant.",
+                    ...extraData
+                };
+
                 const cfgParams = readCfgParams();
                 body.max_image_mp = cfgParams.max_image_mp;
                 body.max_length = cfgParams.max_length;
                 body.seed = cfgParams.seed;
+
                 const imageB64 = await imagesToBase64();
                 if (imageB64) body.image_b64 = imageB64;
+
                 return body;
             }
 
             async function sendMessage() {
                 const message = inputField.value.trim();
                 if (!message || isGenerating) return;
+
                 if (isWorkflowRunning || await isAnyWorkflowActive()) {
-                    isWorkflowRunning = true; updateButtonsState();
-                    setStatus("⏳ wait for workflow to finish, then send", "#fa6"); return;
+                    isWorkflowRunning = true;
+                    updateButtonsState();
+                    setStatus("⏳ wait for workflow to finish, then send", "#fa6");
+                    return;
                 }
-                if (editingIndex >= 0) { editingIndex = -1; updateChatDisplay(); }
-                chatHistory.push({ role: "user", content: message });
-                updateChatDisplay(); syncChatWidget(); updateIdleProgress();
-                inputField.value = ""; autoResizeInput();
+
+                if (editingIndex >= 0) {
+                    editingIndex = -1;
+                    updateChatDisplay();
+                }
+
+                chatHistory.push({
+                    role: "user",
+                    content: message
+                });
+
+                updateChatDisplay();
+                syncChatWidget();
+                updateIdleProgress();
+
+                inputField.value = "";
+                autoResizeInput();
+
                 const body = await buildRequestBody({ chat_history: chatHistory });
+
                 await runGeneration("/iz_chat/generate", body, (result) => {
                     const last = result.chat_history[result.chat_history.length - 1];
-                    if (last && last.role === "assistant") { last.seed = result.seed; last.context_hash = hashContext(result.chat_history.slice(0, -1)); }
+                    if (last && last.role === "assistant") {
+                        last.seed = result.seed;
+                        last.context_hash = hashContext(result.chat_history.slice(0, -1));
+                    }
+
                     chatHistory = result.chat_history;
-                    updateChatDisplay(); syncChatWidget(); updateIdleProgress();
+
+                    updateChatDisplay();
+                    syncChatWidget();
+                    updateIdleProgress();
                 });
             }
 
             async function generateResponse() {
                 if (isGenerating || chatHistory.length === 0) return;
                 if (chatHistory[chatHistory.length - 1].role !== "user") return;
+
                 if (isWorkflowRunning || await isAnyWorkflowActive()) {
-                    isWorkflowRunning = true; updateButtonsState();
-                    setStatus("⏳ wait for workflow to finish, then generate", "#fa6"); return;
+                    isWorkflowRunning = true;
+                    updateButtonsState();
+                    setStatus("⏳ wait for workflow to finish, then generate", "#fa6");
+                    return;
                 }
+
                 const body = await buildRequestBody({ chat_history: chatHistory });
+
                 await runGeneration("/iz_chat/generate", body, (result) => {
                     const last = result.chat_history[result.chat_history.length - 1];
-                    if (last && last.role === "assistant") { last.seed = result.seed; last.context_hash = hashContext(result.chat_history.slice(0, -1)); }
+                    if (last && last.role === "assistant") {
+                        last.seed = result.seed;
+                        last.context_hash = hashContext(result.chat_history.slice(0, -1));
+                    }
+
                     chatHistory = result.chat_history;
-                    updateChatDisplay(); syncChatWidget(); updateIdleProgress();
+
+                    updateChatDisplay();
+                    syncChatWidget();
+                    updateIdleProgress();
                 });
             }
 
             async function regenerateMessage(index) {
                 if (isGenerating) return;
+
                 if (isWorkflowRunning || await isAnyWorkflowActive()) {
-                    isWorkflowRunning = true; updateButtonsState();
-                    setStatus("⏳ wait for workflow to finish, then regenerate", "#fa6"); return;
+                    isWorkflowRunning = true;
+                    updateButtonsState();
+                    setStatus("⏳ wait for workflow to finish, then regenerate", "#fa6");
+                    return;
                 }
+
                 const msg = chatHistory[index];
                 if (!msg || msg.role !== "assistant") return;
+
                 const contextBefore = chatHistory.slice(0, index);
                 const currentHash = hashContext(contextBefore);
                 const useNewSeed = msg.context_hash && msg.context_hash === currentHash;
-                const body = await buildRequestBody({ chat_history: contextBefore, use_new_seed: useNewSeed });
+
+                const body = await buildRequestBody({
+                    chat_history: contextBefore,
+                    use_new_seed: useNewSeed
+                });
+
                 await runGeneration("/iz_chat/regenerate", body, (result) => {
-                    chatHistory[index] = { role: "assistant", content: result.response, seed: result.seed, context_hash: currentHash };
+                    chatHistory[index] = {
+                        role: "assistant",
+                        content: result.response,
+                        seed: result.seed,
+                        context_hash: currentHash
+                    };
+
                     chatHistory = chatHistory.slice(0, index + 1);
-                    updateChatDisplay(); syncChatWidget(); updateIdleProgress();
+
+                    updateChatDisplay();
+                    syncChatWidget();
+                    updateIdleProgress();
                 });
             }
 
             sendBtn.onclick = sendMessage;
             generateBtn.onclick = generateResponse;
-            inputField.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
+
+            inputField.onkeydown = (e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            };
+
             clearBtn.onclick = () => {
                 if (chatHistory.length === 0) return;
                 if (!confirm("Clear chat?")) return;
-                chatHistory = []; editingIndex = -1; loadedImageSizes = [];
-                updateChatDisplay(); syncChatWidget(); updateIdleProgress();
+
+                chatHistory = [];
+                editingIndex = -1;
+                loadedImageSizes = [];
+
+                updateChatDisplay();
+                syncChatWidget();
+                updateIdleProgress();
+
                 setStatus("chat cleared", "#f88");
-                setTimeout(() => { if (!isWorkflowRunning && !isGenerating) setStatus("ready to chat", "#bbb"); }, 2000);
+
+                setTimeout(() => {
+                    if (!isWorkflowRunning && !isGenerating) {
+                        setStatus("ready to chat", "#bbb");
+                    }
+                }, 2000);
             };
 
             const widget = node.addDOMWidget("chat_controls", "Chat", container);
             widget.computeSize = () => [currentWidth, 540];
+
             const onRemoved = node.onRemoved;
-            node.onRemoved = function () { chatHistory = []; editingIndex = -1; loadedImageSizes = []; regenButtons = []; stopProgressPolling(); onRemoved?.apply(this, arguments); };
+            node.onRemoved = function () {
+                chatHistory = [];
+                editingIndex = -1;
+                loadedImageSizes = [];
+                regenButtons = [];
+                stopProgressPolling();
+                onRemoved?.apply(this, arguments);
+            };
 
             setTimeout(() => {
-                try { const saved = chatHistoryWidget?.value; if (saved && saved !== "[]") chatHistory = JSON.parse(saved); }
-                catch (e) { console.error("[iz_chat] Error loading history:", e); }
-                updateChatDisplay(); checkModelStatus(); autoResizeInput(); updateButtonsState();
+                try {
+                    const saved = chatHistoryWidget?.value;
+                    if (saved && saved !== "[]") {
+                        chatHistory = JSON.parse(saved);
+                    }
+                } catch (e) {
+                    console.error("[iz_chat] Error loading history:", e);
+                }
+
+                updateChatDisplay();
+                checkModelStatus();
+                autoResizeInput();
+                updateButtonsState();
 
                 setTimeout(() => debugListSetGetNodes("startup"), 1000);
 
-                (async () => { await updateImageSizes(); updateIdleProgress(); })();
+                (async () => {
+                    await updateImageSizes();
+                    updateIdleProgress();
+                })();
+
                 setTimeout(() => {
                     const urls = getImageUrls();
-                    if (urls) { imgStatus.textContent = `${urls.length} image(s) connected`; imgStatus.style.color = "#8abaff"; }
+                    if (urls) {
+                        imgStatus.textContent = `${urls.length} image(s) connected`;
+                        imgStatus.style.color = "#8abaff";
+                    }
                 }, 500);
             }, 200);
 
@@ -1245,22 +1858,36 @@ app.registerExtension({
                     if (urls) {
                         const curText = imgStatus.textContent;
                         if (!curText.includes("loading") && !curText.includes("failed")) {
-                            imgStatus.textContent = `${urls.length} image(s)`; imgStatus.style.color = "#8f8";
+                            imgStatus.textContent = `${urls.length} image(s)`;
+                            imgStatus.style.color = "#8f8";
                         }
-                    } else { imgStatus.textContent = ""; }
-                    await updateImageSizes(); updateIdleProgress();
+                    } else {
+                        imgStatus.textContent = "";
+                    }
+
+                    await updateImageSizes();
+                    updateIdleProgress();
                 }
             }, 3000);
 
             setInterval(async () => {
                 try {
                     const workflowActive = await isAnyWorkflowActive();
+
                     if (workflowActive && !isWorkflowRunning) {
-                        isWorkflowRunning = true; updateButtonsState();
-                        if (!isGenerating) setStatus("workflow running... you can type, send after finish", "#fa6");
+                        isWorkflowRunning = true;
+                        updateButtonsState();
+
+                        if (!isGenerating) {
+                            setStatus("workflow running... you can type, send after finish", "#fa6");
+                        }
                     } else if (!workflowActive && isWorkflowRunning) {
-                        isWorkflowRunning = false; updateButtonsState();
-                        if (!isGenerating) setStatus("ready to chat", "#bbb");
+                        isWorkflowRunning = false;
+                        updateButtonsState();
+
+                        if (!isGenerating) {
+                            setStatus("ready to chat", "#bbb");
+                        }
                     }
                 } catch (e) {}
             }, 500);
